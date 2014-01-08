@@ -3,9 +3,12 @@
 // @namespace   https://github.com/segabito/
 // @description ニコレナイザー   動画プレイヤー上でニコれなくするやつ Chrome用
 // @include     http://www.nicovideo.jp/watch/*
-// @version     0.1.0
+// @version     0.1.2
 // @grant       none
 // ==/UserScript==
+
+// ver 0.1.2
+// - Watch It Laterと併用時、動画選択画面でのダブルクリックでフルスクリーンにならないのを修正
 
 // ver 0.1.0 最初のバージョン
 
@@ -22,12 +25,10 @@
 
     window.WatchApp.mixin(window.Nicorenizer, {
       initialize: function() {
-          this.initializeShinjuku();
-      },
-      initializeShinjuku: function() {
         this._watchInfoModel      = window.WatchApp.ns.init.CommonModelInitializer.watchInfoModel;
         this._playerAreaConnector = window.WatchApp.ns.init.PlayerInitializer.playerAreaConnector;
         this._nicoPlayerConnector = window.WatchApp.ns.init.PlayerInitializer.nicoPlayerConnector;
+        this._videoExplorer       = window.WatchApp.ns.init.VideoExplorerInitializer.videoExplorer;
 
         this.initializeUserConfig();
         this.initializeShield();
@@ -149,14 +150,15 @@
       initializeShield: function() {
         var nicoPlayerConnector = this._nicoPlayerConnector;
         var playerAreaConnector = this._playerAreaConnector;
+        var videoExplorer       = this._videoExplorer;
         var nicoPlayer = $("#external_nicoplayer")[0];
-        var $shield = $('<div id="nicorenaiShield"/>');
+        var $shield = $('<div id="nicorenaiShield"></div>');
         var $toggle = $('<button id="nicorenaiShieldToggle">シールド</botton>');
 
         var click = function(e) {
           // TODO: YouTubeみたいに中央に停止/再生マーク出す？
           if (e.button !== 0) return;
-          var $shield = $(this).addClass('showCursor');
+          //var $shield = $(this).addClass('showCursor');
           var status = nicoPlayer.ext_getStatus();
           if (status === 'playing') {
             nicoPlayerConnector.stopVideo();
@@ -168,6 +170,10 @@
           if (e.button !== 0) return;
           e.preventDefault(); e.stopPropagation();
 
+          if (videoExplorer.isOpen()) {
+            videoExplorer.changeState(false);
+            window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+          } else
           if ($('body').hasClass('full_with_browser')) {
             window.WatchJsApi.player.changePlayerScreenMode('notFull');
           } else {
