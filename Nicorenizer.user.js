@@ -276,7 +276,24 @@
       }
     });
 
-    window.Nicorenizer.initialize();
+    if (window.PlayerApp) {
+      (function() {
+        var watchInfoModel = WatchApp.ns.model.WatchInfoModel.getInstance();
+        if (watchInfoModel.initialized) {
+          window.Nicorenizer.initialize();
+        } else {
+          var onReset = function() {
+            watchInfoModel.removeEventListener('reset', onReset);
+            window.setTimeout(function() {
+              watchInfoModel.removeEventListener('reset', onReset);
+              window.Nicorenizer.initialize();
+            }, 0);
+          };
+          watchInfoModel.addEventListener('reset', onReset);
+        }
+      })();
+    }
+
 
   });
 
