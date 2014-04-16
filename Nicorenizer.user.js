@@ -3,7 +3,7 @@
 // @namespace   https://github.com/segabito/
 // @description ニコレナイザー   動画プレイヤー上でニコれなくするやつ Chrome用
 // @include     http://www.nicovideo.jp/watch/*
-// @version     0.1.2
+// @version     0.1.3
 // @grant       none
 // ==/UserScript==
 
