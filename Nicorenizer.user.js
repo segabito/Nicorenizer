@@ -3,9 +3,12 @@
 // @namespace   https://github.com/segabito/
 // @description ニコレナイザー   動画プレイヤー上でニコれなくするやつ Chrome用
 // @include     http://www.nicovideo.jp/watch/*
-// @version     0.1.3
+// @version     0.1.5
 // @grant       none
 // ==/UserScript==
+
+// TODO:
+// ダブルクリック時にフルスクリーンにする設定を無効・ブラウザ全体・モニター全体から選べるようにする
 
 // ver 0.1.2
 // - Watch It Laterと併用時、動画選択画面でのダブルクリックでフルスクリーンにならないのを修正
@@ -25,10 +28,13 @@
 
     window.WatchApp.mixin(window.Nicorenizer, {
       initialize: function() {
-        this._watchInfoModel      = window.WatchApp.ns.init.CommonModelInitializer.watchInfoModel;
-        this._playerAreaConnector = window.WatchApp.ns.init.PlayerInitializer.playerAreaConnector;
-        this._nicoPlayerConnector = window.WatchApp.ns.init.PlayerInitializer.nicoPlayerConnector;
-        this._videoExplorer       = window.WatchApp.ns.init.VideoExplorerInitializer.videoExplorer;
+        this._watchInfoModel      = require('watchapp/model/WatchInfoModel').getInstance();//window.WatchApp.ns.init.CommonModelInitializer.watchInfoModel;
+        var PlayerInitializer = require('watchapp/init/PlayerInitializer');
+        this._playerAreaConnector = PlayerInitializer.playerAreaConnector;
+        this._nicoPlayerConnector = PlayerInitializer.nicoPlayerConnector;
+        this._videoExplorer       = require('watchapp/init/VideoExplorerInitializer').videoExplorer;
+
+        this._vastStatus = this._nicoPlayerConnector.vastStatus;
 
         this.initializeUserConfig();
         this.initializeShield();
@@ -64,7 +70,7 @@
             cursor: none;
           }
 
-          #nicorenaiShield.disable, #nicorenaiShield.disableTemp {
+          #nicorenaiShield.disable, #nicorenaiShield.vast, #nicorenaiShield.disableTemp {
             display: none !important;
           }
 
@@ -244,17 +250,24 @@
             if (parseInt(vpos, 10) === 0) toggleDisable(false);
           }
         );
-        $shield//.addClass('debug')
+        $shield
           .on('click'   ,  click)
           .on('dblclick',  dblclick)
           .on('mousedown', mousedown)
           .on('mousemove', mousemove);
 
-        $toggle//.addClass('debug')
+        $toggle
           .attr('title', 'クリックで無効化ON/OFF')
           .on('click', toggleDisable);
 
 
+        var vastStatus = this._vastStatus;
+        vastStatus.addEventListener('linearStart', function() {
+          $shield.addClass('vast');
+        });
+        vastStatus.addEventListener('linearEnd', function() {
+          $shield.removeClass('vast');
+        });
 
         $('#external_nicoplayer').after($shield).after($toggle);
 
