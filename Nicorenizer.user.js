@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name        Nicorenizer
 // @namespace   https://github.com/segabito/
-// @description ニコレナイザー   動画プレイヤー上でニコれなくするやつ Chrome用
+// @description 動画クリックで一時停止/再開 ダブルクリックでフルスクリーン切換え
 // @include     http://www.nicovideo.jp/watch/*
-// @version     0.1.5
+// @version     0.1.6
 // @grant       none
 // ==/UserScript==
 
@@ -37,6 +37,7 @@
         this._vastStatus = this._nicoPlayerConnector.vastStatus;
 
         this.initializeUserConfig();
+        this.initializeSettingPanel();
         this.initializeShield();
 
         this.initializePlayerApp();
@@ -129,6 +130,64 @@
             content: ':OFF';
           }
 
+          #nicorenizerSettingPanel {
+            position: fixed;
+            bottom: 2000px; right: 8px;
+            z-index: -1;
+            width: 500px;
+            background: #f0f0f0; border: 1px solid black;
+            padding: 8px;
+            transition: bottom 0.4s ease-out;
+          }
+          #nicorenizerSettingPanel.open {
+            display: block;
+            bottom: 8px;
+            box-shadow: 0 0 8px black;
+            z-index: 10000;
+          }
+          #nicorenizerSettingPanel .close {
+            position: absolute;
+            cursor: pointer;
+            right: 8px; top: 8px;
+          }
+          #nicorenizerSettingPanel .panelInner {
+            background: #fff;
+            border: 1px inset;
+            padding: 8px;
+            min-height: 300px;
+            overflow-y: scroll;
+            max-height: 500px;
+          }
+          #nicorenizerSettingPanel .panelInner .item {
+            border-bottom: 1px dotted #888;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+          }
+          #nicorenizerSettingPanel .panelInner .item:hover {
+            background: #eef;
+          }
+          #nicorenizerSettingPanel .windowTitle {
+            font-size: 150%;
+          }
+          #nicorenizerSettingPanel .itemTitle {
+          }
+          #nicorenizerSettingPanel label {
+
+          }
+          #nicorenizerSettingPanel small {
+            color: #666;
+          }
+          #nicorenizerSettingPanel .expert {
+            margin: 32px 0 16px;
+            font-size: 150%;
+            background: #ccc;
+          }
+
+          {* Chromeの不具合対策 *}
+          body.full_with_browser {
+            width: 100%;
+          }
+
 
         */}).toString().match(/[^]*\/\*([^]*)\*\/\}$/)[1].replace(/\{\*/g, '/*').replace(/\*\}/g, '*/');
 
@@ -136,7 +195,10 @@
       },
       initializeUserConfig: function() {
         var prefix = 'Nicorenizer_';
-        var conf = {};
+        var conf = {
+          fullScreenType: 'browser', // none, browser, monitor
+          togglePlay: true
+        };
         this.config = {
           get: function(key) {
             try {
@@ -153,6 +215,64 @@
           }
         };
       },
+      initializeSettingPanel: function() {
+        var $menu   = $('<li class="nicorenizerSettingMenu"><a href="javascript:;" title="Nicorenizerの設定変更">Nicorenizer設定</a></li>');
+        var $panel  = $('<div id="nicorenizerSettingPanel" />');//.addClass('open');
+        var $button = $('<button class="toggleSetting playerBottomButton">設定</botton>');
+
+        $button.on('click', function(e) {
+          e.stopPropagation(); e.preventDefault();
+          $panel.toggleClass('open');
+        });
+
+        var config = this.config;
+        $menu.find('a').on('click', function() { $panel.toggleClass('open'); });
+
+        var __tpl__ = (function() {/*
+          <div class="panelHeader">
+          <h1 class="windowTitle">Nicorenizerの設定</h1>
+          <button class="close" title="閉じる">×</button>
+          </div>
+          <div class="panelInner">
+            <div class="item" data-setting-name="togglePlay" data-menu-type="radio">
+              <h3 class="itemTitle">画面クリックで一時停止/再生</h3>
+              <label><input type="radio" value="true" >する</label>
+              <label><input type="radio" value="false">しない</label>
+            </div>
+
+            <div class="item" data-setting-name="fullScreenType" data-menu-type="radio">
+              <h3 class="itemTitle">ダブルクリック時のフルスクリーン</h3>
+              <label><input type="radio" value="&quot;browser&quot;" >ブラウザ全体</label>
+              <label><input type="radio" value="&quot;monitor&quot;">モニター全体</label>
+              <label><input type="radio" value="&quot;none&quot;">切り換えない</label>
+            </div>
+          </div>
+        */}).toString().match(/[^]*\/\*([^]*)\*\/\}$/)[1].replace(/\{\*/g, '/*').replace(/\*\}/g, '*/');
+        $panel.html(__tpl__);
+        $panel.find('.item').on('click', function(e) {
+          var $this = $(this);
+          var settingName = $this.attr('data-setting-name');
+          var value = JSON.parse($this.find('input:checked').val());
+          console.log('seting-name', settingName, 'value', value);
+          config.set(settingName, value);
+        }).each(function(e) {
+          var $this = $(this);
+          var settingName = $this.attr('data-setting-name');
+          var value = config.get(settingName);
+          $this.addClass(settingName);
+          $this.find('input').attr('name', settingName).val([JSON.stringify(value)]);
+        });
+        $panel.find('.close').click(function() {
+          $panel.removeClass('open');
+        });
+
+
+        $('#playerAlignmentArea').append($button);
+        $('#siteHeaderRightMenuFix').after($menu);
+        $('body').append($panel);
+
+
+      },
       initializeShield: function() {
         var nicoPlayerConnector = this._nicoPlayerConnector;
         var playerAreaConnector = this._playerAreaConnector;
@@ -161,9 +281,52 @@
         var $shield = $('<div id="nicorenaiShield"></div>');
         var $toggle = $('<button id="nicorenaiShieldToggle">シールド</botton>');
 
+        var config = this.config;
+
+        var FullScreen = {
+          now: function() {
+            if (document.fullScreenElement || document.mozFullScreen || document.webkitIsFullScreen) {
+              return true;
+            }
+            return false;
+          },
+          request: function(target) {
+            var elm = typeof target === 'string' ? document.getElementById(target) : target;
+            if (!elm) { return; }
+            if (elm.requestFullScreen) {
+              elm.requestFullScreen();
+            } else if (elm.webkitRequestFullScreen) {
+              elm.webkitRequestFullScreen();
+            } else if (elm.mozRequestFullScreen) {
+              elm.mozRequestFullScreen();
+            }
+          },
+          cancel: function() {
+            if (!this.now()) { return; }
+
+            if (document.cancelFullScreen) {
+              document.cancelFullScreen();
+            } else if (document.webkitCancelFullScreen) {
+              document.webkitCancelFullScreen();
+            } else if (document.mozCancelFullScreen) {
+              document.mozCancelFullScreen();
+            }
+          }
+        };
+
+        var toggleMonitorFull = function(v) {
+          var now = FullScreen.now();
+          if (now || v === false) {
+            FullScreen.cancel();
+          } else if (!now || v === true) {
+            FullScreen.request(document.body);
+          }
+        };
+
         var click = function(e) {
           // TODO: YouTubeみたいに中央に停止/再生マーク出す？
-          if (e.button !== 0) return;
+          if (e.button !== 0) { return; }
+          if (!config.get('togglePlay')) { return; }
           //var $shield = $(this).addClass('showCursor');
           var status = nicoPlayer.ext_getStatus();
           if (status === 'playing') {
@@ -172,18 +335,32 @@
             nicoPlayerConnector.playVideo();
           }
         };
+
         var dblclick = function(e) {
           if (e.button !== 0) return;
           e.preventDefault(); e.stopPropagation();
+          var fullScreenType = config.get('fullScreenType');
+          if (fullScreenType === 'none') { return; }
 
           if (videoExplorer.isOpen()) {
             videoExplorer.changeState(false);
-            window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+            if (fullScreenType === 'monitor') {
+              toggleMonitorFull(true);
+              window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+            } else {
+              window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+            }
           } else
           if ($('body').hasClass('full_with_browser')) {
             window.WatchJsApi.player.changePlayerScreenMode('notFull');
+            toggleMonitorFull(false);
           } else {
-            window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+            if (fullScreenType === 'monitor') {
+              toggleMonitorFull(true);
+              window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+            } else {
+              window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+            }
           }
         };
 
