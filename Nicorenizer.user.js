@@ -3,7 +3,7 @@
 // @namespace   https://github.com/segabito/
 // @description 動画クリックで一時停止/再開 ダブルクリックでフルスクリーン切換え
 // @include     http://www.nicovideo.jp/watch/*
-// @version     0.1.6
+// @version     0.1.7
 // @grant       none
 // ==/UserScript==
 
@@ -32,6 +32,7 @@
         var PlayerInitializer = require('watchapp/init/PlayerInitializer');
         this._playerAreaConnector = PlayerInitializer.playerAreaConnector;
         this._nicoPlayerConnector = PlayerInitializer.nicoPlayerConnector;
+        this._playerScreenMode    = PlayerInitializer.playerScreenMode;
         this._videoExplorer       = require('watchapp/init/VideoExplorerInitializer').videoExplorer;
 
         this._vastStatus = this._nicoPlayerConnector.vastStatus;
@@ -276,6 +277,7 @@
       initializeShield: function() {
         var nicoPlayerConnector = this._nicoPlayerConnector;
         var playerAreaConnector = this._playerAreaConnector;
+        var playerScreenMode    = this._playerScreenMode;
         var videoExplorer       = this._videoExplorer;
         var nicoPlayer = $("#external_nicoplayer")[0];
         var $shield = $('<div id="nicorenaiShield"></div>');
@@ -323,6 +325,17 @@
           }
         };
 
+        var lastScreenMode = '';
+        var onScreenModeChange = function(sc) {
+          var mode = sc.mode;
+          if (lastScreenMode === 'browserFull' && mode !== 'browserFull') {
+            toggleMonitorFull(false);
+          }
+          lastScreenMode = mode;
+        };
+
+        playerScreenMode.addEventListener('change', onScreenModeChange);
+
         var click = function(e) {
           // TODO: YouTubeみたいに中央に停止/再生マーク出す？
           if (e.button !== 0) { return; }
@@ -345,8 +358,8 @@
           if (videoExplorer.isOpen()) {
             videoExplorer.changeState(false);
             if (fullScreenType === 'monitor') {
-              toggleMonitorFull(true);
               window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+              toggleMonitorFull(true);
             } else {
               window.WatchJsApi.player.changePlayerScreenMode('browserFull');
             }
@@ -356,8 +369,8 @@
             toggleMonitorFull(false);
           } else {
             if (fullScreenType === 'monitor') {
-              toggleMonitorFull(true);
               window.WatchJsApi.player.changePlayerScreenMode('browserFull');
+              toggleMonitorFull(true);
             } else {
               window.WatchJsApi.player.changePlayerScreenMode('browserFull');
             }
