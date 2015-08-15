@@ -3,7 +3,7 @@
 // @namespace   https://github.com/segabito/
 // @description 動画クリックで一時停止/再開 ダブルクリックでフルスクリーン切換え
 // @include     http://www.nicovideo.jp/watch/*
-// @version     0.1.7
+// @version     0.2.1
 // @grant       none
 // ==/UserScript==
 
@@ -24,6 +24,38 @@
       return;
     }
 
+    var FullScreen = {
+      now: function() {
+        if (document.fullScreenElement || document.mozFullScreen || document.webkitIsFullScreen) {
+          return true;
+        }
+        return false;
+      },
+      request: function(target) {
+        var elm = typeof target === 'string' ? document.getElementById(target) : target;
+        if (!elm) { return; }
+        if (elm.requestFullScreen) {
+          elm.requestFullScreen();
+        } else if (elm.webkitRequestFullScreen) {
+          elm.webkitRequestFullScreen();
+        } else if (elm.mozRequestFullScreen) {
+          elm.mozRequestFullScreen();
+        }
+      },
+      cancel: function() {
+        if (!this.now()) { return; }
+
+        if (document.cancelFullScreen) {
+          document.cancelFullScreen();
+        } else if (document.webkitCancelFullScreen) {
+          document.webkitCancelFullScreen();
+        } else if (document.mozCancelFullScreen) {
+          document.mozCancelFullScreen();
+        }
+      }
+    };
+
+
     window.Nicorenizer = {};
 
     window.WatchApp.mixin(window.Nicorenizer, {
@@ -33,13 +65,16 @@
         this._playerAreaConnector = PlayerInitializer.playerAreaConnector;
         this._nicoPlayerConnector = PlayerInitializer.nicoPlayerConnector;
         this._playerScreenMode    = PlayerInitializer.playerScreenMode;
+        this._playlist            = require('watchapp/init/PlaylistInitializer').playlist;
         this._videoExplorer       = require('watchapp/init/VideoExplorerInitializer').videoExplorer;
+        this._watchInfoModel = require('watchapp/model/WatchInfoModel').getInstance();
 
         this._vastStatus = this._nicoPlayerConnector.vastStatus;
 
         this.initializeUserConfig();
         this.initializeSettingPanel();
         this.initializeShield();
+        this.initializePlayerEvent();
 
         this.initializePlayerApp();
 
@@ -189,6 +224,76 @@
             width: 100%;
           }
 
+          #nicorenaiShield .previous,
+          #nicorenaiShield .next {
+            position: absolute;
+            display: none;
+            top: 0;
+            width: 48px;
+            height: 100%;
+            opacity: 0.8;
+          }
+
+          #nicorenaiShield.hasPrevious .previous,
+          #nicorenaiShield.hasNext     .next     {
+            display: block;
+          }
+
+
+          #nicorenaiShield .previous .button,
+          #nicorenaiShield .next .button{
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 40px;
+            height: 64px;
+            margin: auto;
+            box-sizing: border-box;
+            font-size: 28px;
+            cursor: pointer;
+            background-color: #333;
+            color: #fff;
+            border: 2px solid #ccc;
+            opacity: 0;
+            transition: opacity 0.4s linear;
+            user-select: none;
+          }
+
+          #nicorenaiShield .previous:hover .button,
+          #nicorenaiShield .next:hover .button {
+            opacity: 1;
+          }
+
+          #nicorenaiShield .previous .button:active,
+          #nicorenaiShield .next .button:active {
+            background: #888;
+          }
+
+
+          #nicorenaiShield .previous {
+            left: 0;
+          }
+          #nicorenaiShield .next     {
+            right: 0;
+          }
+
+          #nicorenaiShield .previous .button {
+          }
+          #nicorenaiShield .next     .button {
+            right: 0;
+            left: auto;
+          }
+
+
+          body.full_with_browser #nicoplayerContainer #nicoplayerContainerInner {
+            margin-bottom: -76px !important;
+          }
+          body.full_with_browser.showControl #nicoplayerContainer #nicoplayerContainerInner {
+            margin-bottom: 0 !important;
+          }
+
+
 
         */}).toString().match(/[^]*\/\*([^]*)\*\/\}$/)[1].replace(/\{\*/g, '/*').replace(/\*\}/g, '*/');
 
@@ -250,13 +355,13 @@
           </div>
         */}).toString().match(/[^]*\/\*([^]*)\*\/\}$/)[1].replace(/\{\*/g, '/*').replace(/\*\}/g, '*/');
         $panel.html(__tpl__);
-        $panel.find('.item').on('click', function(e) {
+        $panel.find('.item').on('click', function(/* e */) {
           var $this = $(this);
           var settingName = $this.attr('data-setting-name');
           var value = JSON.parse($this.find('input:checked').val());
           console.log('seting-name', settingName, 'value', value);
           config.set(settingName, value);
-        }).each(function(e) {
+        }).each(function(/* e */) {
           var $this = $(this);
           var settingName = $this.attr('data-setting-name');
           var value = config.get(settingName);
@@ -274,78 +379,45 @@
 
 
       },
-      initializeShield: function() {
-        var nicoPlayerConnector = this._nicoPlayerConnector;
-        var playerAreaConnector = this._playerAreaConnector;
-        var playerScreenMode    = this._playerScreenMode;
-        var videoExplorer       = this._videoExplorer;
-        var nicoPlayer = $("#external_nicoplayer")[0];
-        var $shield = $('<div id="nicorenaiShield"></div>');
-        var $toggle = $('<button id="nicorenaiShieldToggle">シールド</botton>');
+      _initializeDom: function() {
+        var $prev = $('<div class="previous"><button class="button" data-click-command="previous" title="前の動画">&lt;</button></div>');
+        var $next = $('<div class="next"><button class="button" data-click-command="next" title="次の動画">&gt;</button></div>');
+        this._$shield = $('<div id="nicorenaiShield" class="hasPrevious hasNext"></div>');
+        this._$toggle = $('<button id="nicorenaiShieldToggle" title="クリックで無効化ON/OFF">シールド</botton>');
+        this._$shield.append($prev).append($next);
 
+        $('#external_nicoplayer').after(this._$shield).after(this._$toggle);
+        return this._$shield;
+      },
+      initializeShield: function() {
+        var videoExplorer       = this._videoExplorer;
+        var nicoPlayer          = $("#external_nicoplayer")[0];
+        var toggleMonitorFull   = $.proxy(this.toggleMonitorFull, this);
+        var toggleDisable       = $.proxy(this.toggleDisable, this);
+        var execCommand         = $.proxy(this.execCommand, this);
         var config = this.config;
 
-        var FullScreen = {
-          now: function() {
-            if (document.fullScreenElement || document.mozFullScreen || document.webkitIsFullScreen) {
-              return true;
-            }
-            return false;
-          },
-          request: function(target) {
-            var elm = typeof target === 'string' ? document.getElementById(target) : target;
-            if (!elm) { return; }
-            if (elm.requestFullScreen) {
-              elm.requestFullScreen();
-            } else if (elm.webkitRequestFullScreen) {
-              elm.webkitRequestFullScreen();
-            } else if (elm.mozRequestFullScreen) {
-              elm.mozRequestFullScreen();
-            }
-          },
-          cancel: function() {
-            if (!this.now()) { return; }
-
-            if (document.cancelFullScreen) {
-              document.cancelFullScreen();
-            } else if (document.webkitCancelFullScreen) {
-              document.webkitCancelFullScreen();
-            } else if (document.mozCancelFullScreen) {
-              document.mozCancelFullScreen();
-            }
-          }
-        };
-
-        var toggleMonitorFull = function(v) {
-          var now = FullScreen.now();
-          if (now || v === false) {
-            FullScreen.cancel();
-          } else if (!now || v === true) {
-            FullScreen.request(document.body);
-          }
-        };
-
-        var lastScreenMode = '';
-        var onScreenModeChange = function(sc) {
-          var mode = sc.mode;
-          if (lastScreenMode === 'browserFull' && mode !== 'browserFull') {
-            toggleMonitorFull(false);
-          }
-          lastScreenMode = mode;
-        };
-
-        playerScreenMode.addEventListener('change', onScreenModeChange);
+        this._initializeDom();
+        var $shield = this._$shield;
+        var $toggle = this._$toggle;
 
         var click = function(e) {
           // TODO: YouTubeみたいに中央に停止/再生マーク出す？
           if (e.button !== 0) { return; }
           if (!config.get('togglePlay')) { return; }
-          //var $shield = $(this).addClass('showCursor');
+          var $target = $(e.target);
+          var cmd = $target.attr('data-click-command');
+          if (cmd) {
+            e.preventDefault();
+            e.stopPropagation();
+            execCommand(cmd);
+            return;
+          }
           var status = nicoPlayer.ext_getStatus();
           if (status === 'playing') {
-            nicoPlayerConnector.stopVideo();
+            execCommand('stop');
           } else {
-            nicoPlayerConnector.playVideo();
+            execCommand('play');
           }
         };
 
@@ -388,7 +460,7 @@
             $shield.off('mousemove', mousemove);
             $shield.removeClass('showCursor');
             window.setTimeout(function() { $shield.on('mousemove', mousemove); }, 500);
-          }, 3000);
+          }, 1500);
         };
 
         var mousedown = function(e) {
@@ -409,21 +481,59 @@
           }, 5000);
         };
 
-        var toggleDisable = function(f, showButtonTemporary) {
-          var isDisable = $toggle.toggleClass('disable', f).hasClass('disable');
-          $shield.toggleClass('disable', isDisable);
+        $shield
+          .on('click'   ,  click)
+          .on('dblclick',  dblclick)
+          .on('mousedown', mousedown)
+          .on('mousemove', mousemove);
 
-          if (showButtonTemporary) { // 状態が変わった事を通知するために一時的に表示する
-            $toggle.addClass('show');
-            window.setTimeout(function() { $toggle.removeClass('show'); }, 2000);
+        $toggle
+          .on('click', toggleDisable);
+
+      },
+      _initializeScreenMode: function() {
+        var playerScreenMode    = this._playerScreenMode;
+        var lastScreenMode = '';
+        var $nicoplayerContainer = $('#nicoplayerContainer');
+        var toggleMonitorFull = $.proxy(this.toggleMonitorFull, this);
+
+        var onPlayerContainerMouseMove = _.debounce(function(e) {
+          var bottom = $nicoplayerContainer.innerHeight() - e.clientY;
+          $('body').toggleClass('showControl', bottom < 100);
+        }, 100);
+
+        var onScreenModeChange = function(sc) {
+          var mode = sc.mode;
+          if (lastScreenMode === 'browserFull' && mode !== 'browserFull') {
+            toggleMonitorFull(false);
+          }
+          lastScreenMode = mode;
+
+          if (mode === 'browserFull') {
+            $nicoplayerContainer.on('mousemove', onPlayerContainerMouseMove);
+          } else {
+            $nicoplayerContainer.off('mousemove', onPlayerContainerMouseMove);
           }
         };
+
+        playerScreenMode.addEventListener('change', onScreenModeChange);
+      },
+      initializePlayerEvent: function() {
+        var playerAreaConnector = this._playerAreaConnector;
+        var watchInfoModel    = this._watchInfoModel;
+        var playlist          = this._playlist;
+        var $shield           = this._$shield;
+        var $toggle           = this._$toggle;
+        var toggleDisable     = $.proxy(this.toggleDisable, this);
+
+        this._initializeScreenMode();
 
         // 最初に再生開始されるまでは表示しない。 ローカルストレージ～が出たときにクリックできるようにするため。
         // でも自動再生にしてると詰む。
         playerAreaConnector.addEventListener(
           'onVideoStarted', function() {
-            $shield.addClass('initialized'); $toggle.addClass('initialized');
+            $shield.addClass('initialized');
+            $toggle.addClass('initialized');
             toggleDisable(false);
           }
         );
@@ -434,23 +544,35 @@
             toggleDisable(true, true);
           }
         );
+
         playerAreaConnector.addEventListener(
-          'onVideoSeeked', function(vpos, b, c) {
+          'onVideoSeeked', function(vpos/*, b, c*/) {
             // もう一度再生する場合など
             if (parseInt(vpos, 10) === 0) toggleDisable(false);
           }
         );
-        $shield
-          .on('click'   ,  click)
-          .on('dblclick',  dblclick)
-          .on('mousedown', mousedown)
-          .on('mousemove', mousemove);
 
-        $toggle
-          .attr('title', 'クリックで無効化ON/OFF')
-          .on('click', toggleDisable);
+        var hasPreviousVideo = function() {
+          console.log('%chasPreviousVideo', 'background: cyan;', playlist.getPlayingIndex(), 0);
+          return playlist.getPlayingIndex() > 0;
+        };
 
+        var hasNextVideo = function() {
+          console.log('%chasNextVideo', 'background: cyan;', playlist.getPlayingIndex(), playlist.getItems().length);
+          return playlist.getPlayingIndex() < playlist.getItems().length - 1;
+        };
 
+        var onWatchInfoModelReset = function() {
+          $shield
+            .toggleClass('hasPrevious', hasPreviousVideo())
+            .toggleClass('hasNext',     hasNextVideo());
+        };
+        watchInfoModel.addEventListener('reset', onWatchInfoModelReset);
+        if (watchInfoModel.initialized) {
+          window.setTimeout(function() { onWatchInfoModelReset(); }, 0);
+        }
+
+        // 動画広告まわり
         var vastStatus = this._vastStatus;
         vastStatus.addEventListener('linearStart', function() {
           $shield.addClass('vast');
@@ -458,8 +580,6 @@
         vastStatus.addEventListener('linearEnd', function() {
           $shield.removeClass('vast');
         });
-
-        $('#external_nicoplayer').after($shield).after($toggle);
 
       },
       initializePlayerApp: function() {
@@ -476,12 +596,52 @@
         if (!np.ext_getStatus) {
           np.ext_getStatus = function()  { return ep.ext_getStatus(); };
         }
+      },
+      toggleMonitorFull: function(v) {
+        var now = FullScreen.now();
+        if (now || v === false) {
+          FullScreen.cancel();
+        } else if (!now || v === true) {
+          FullScreen.request(document.body);
+        }
+      },
+      toggleDisable: function(f, showButtonTemporary) {
+        var $shield = this._$shield;
+        var $toggle = this._$toggle;
+
+        var isDisable = $toggle.toggleClass('disable', f).hasClass('disable');
+        $shield.toggleClass('disable', isDisable);
+
+        if (showButtonTemporary) { // 状態が変わった事を通知するために一時的に表示する
+          $toggle.addClass('show');
+          window.setTimeout(function() { $toggle.removeClass('show'); }, 2000);
+        }
+      },
+      execCommand: function(cmd) {
+        var nicoPlayerConnector = this._nicoPlayerConnector;
+        console.log('%cexec command: %s', 'background: cyan;', cmd);
+        switch (cmd) {
+          case 'previous':
+            nicoPlayerConnector.playPreviousVideo();
+            break;
+          case 'next':
+            nicoPlayerConnector.playNextVideo();
+            break;
+          case 'stop':
+            nicoPlayerConnector.stopVideo();
+            break;
+          case 'play':
+            nicoPlayerConnector.playVideo();
+            break;
+          default:
+            break;
+        }
       }
     });
 
     if (window.PlayerApp) {
       (function() {
-        var watchInfoModel = WatchApp.ns.model.WatchInfoModel.getInstance();
+        var watchInfoModel = require('watchapp/model/WatchInfoModel').getInstance();
         if (watchInfoModel.initialized) {
           window.Nicorenizer.initialize();
         } else {
