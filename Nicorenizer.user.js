@@ -287,9 +287,11 @@
 
 
           body.full_with_browser #nicoplayerContainer #nicoplayerContainerInner {
+            margin-top: 0 !important;
             margin-bottom: -76px !important;
           }
           body.full_with_browser.showControl #nicoplayerContainer #nicoplayerContainerInner {
+            margin-top: 0 !important;
             margin-bottom: 0 !important;
           }
 
